@@ -80,14 +80,21 @@ CREATE TABLE stock_adjustments (
     FOREIGN KEY (admin_id) REFERENCES users(id)
 );
 
--- 8. Daily Reports Table (Staff end-of-day money deposit reports)[cite: 1]
+-- 8. Daily Reports Table (Header for staff end-of-day reports tracking total sales and staff)
 CREATE TABLE daily_reports (
     id INT AUTO_INCREMENT PRIMARY KEY,
     staff_id INT NOT NULL,
+    daily_sells_amount DECIMAL(12, 2) NOT NULL, -- Total sales amount for the day
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (staff_id) REFERENCES users(id)
+);
+
+-- 9. Daily Report Entries Table (Line items allowing the deposit to be split across multiple banks, e.g., CBE 3000, BOA 2000)
+CREATE TABLE daily_report_entries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    daily_report_id INT NOT NULL,
     bank_id INT NOT NULL,
     amount DECIMAL(12, 2) NOT NULL,
-    report_date DATE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (staff_id) REFERENCES users(id),
+    FOREIGN KEY (daily_report_id) REFERENCES daily_reports(id) ON DELETE CASCADE,
     FOREIGN KEY (bank_id) REFERENCES banks(id)
 );
