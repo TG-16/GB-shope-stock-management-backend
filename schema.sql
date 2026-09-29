@@ -22,13 +22,15 @@ CREATE TABLE users (
 );
 
 -- 3. Products Table (Stores current stock, minimum stock, and current purchase price)
+-- Updated Products Table
 CREATE TABLE products (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     category VARCHAR(100) NOT NULL,
     purchase_price DECIMAL(10, 2) NOT NULL,
-    current_stock INT NOT NULL DEFAULT 0,
-    minimum_stock INT NOT NULL DEFAULT 0,
+    current_stock DECIMAL(10, 2) NOT NULL DEFAULT 0.00, -- Supports both whole pieces and fractional meters
+    minimum_stock DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    unit ENUM('pce', 'meter') NOT NULL DEFAULT 'pce',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
