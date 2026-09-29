@@ -2,10 +2,14 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+const pool = require('./config/db');
+
+// Import Route modules
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const saleRoutes = require('./routes/saleRoutes');
-const pool = require('./config/db');
+const expenseRoutes = require('./routes/expenseRoutes');
+const reportRoutes = require('./routes/reportsRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -14,23 +18,25 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Basic health check route
+// Health check route
 app.get('/', (req, res) => {
     res.json({ 
         status: 'online', 
-        message: 'Stock Management System API V1 is running.' 
+        message: 'Stock Management System API V1 is fully operational.' 
     });
 });
 
-// Mount routes
+// Mount API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/sales', saleRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/reports', reportRoutes);
 
 // TODO: Mount your API routes here once created
 // ##### app.use('/api/auth', authRoutes); 
 // ##### app.use('/api/products', productRoutes);
-// app.use('/api/sales', saleRoutes);
+// ##### app.use('/api/sales', saleRoutes);
 // app.use('/api/purchases', purchaseRoutes);
 // app.use('/api/adjustments', adjustmentRoutes);
 // app.use('/api/daily-reports', dailyReportRoutes);

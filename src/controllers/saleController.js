@@ -1,59 +1,49 @@
 const pool = require('../config/db');
 
-// Create a new sale (Accessible by Staff and Admin)
+// Create Sale or Credit Sale
 const createSale = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
 
-        const staffId = req.user.id; // From JWT payload
-        const { items } = req.body; // Expected format: [{ productId: 1, quantity: 2, sellingPrice: 45 }, ...]
+        const staffId = req.user.id;
+        const { items, isCredit } = req.body;
 
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'A sale must contain at least one item.' });
         }
 
-        // 1. Insert into sales table (Header)
+        const saleStatus = isCredit ? 'CREDIT' : 'ACTIVE';
+
         const [saleResult] = await connection.query(
             'INSERT INTO sales (staff_id, status) VALUES (?, ?)',
-            [staffId, 'ACTIVE']
+            [staffId, saleStatus]
         );
         const saleId = saleResult.insertId;
 
-        // 2. Process each sale item
         for (const item of items) {
             const { productId, quantity, sellingPrice } = item;
 
-            if (!productId || quantity === undefined || sellingPrice === undefined || quantity <= 0 || sellingPrice < 0) {
-                throw new Error('Invalid product ID, quantity, or selling price in sale items.');
-            }
-
-            // Check product existence and current stock & purchase price
             const [productRows] = await connection.query(
                 'SELECT current_stock, purchase_price FROM products WHERE id = ? FOR UPDATE',
                 [productId]
             );
 
             if (productRows.length === 0) {
-                throw new Error(`Product with ID ${productId} not found.`);
+                throw new Error(`Product ID ${productId} not found.`);
             }
 
-            const product = productRows.real || productRows[0];
-            const currentStock = Number(product.current_stock);
-            const purchasePrice = Number(product.purchase_price);
-
-            if (currentStock < Number(quantity)) {
-                throw new Error(`Insufficient stock for product ID ${productId}. Available: ${currentStock}, Requested: ${quantity}`);
+            const product = productRows[0];
+            if (Number(product.current_stock) < Number(quantity)) {
+                throw new Error(`Insufficient stock for product ID ${productId}.`);
             }
 
-            // Insert into sale_items capturing historical purchase price for profit calculation
             await connection.query(
                 `INSERT INTO sale_items (sale_id, product_id, quantity, selling_price, historical_purchase_price) 
                  VALUES (?, ?, ?, ?, ?)`,
-                [saleId, productId, quantity, sellingPrice, purchasePrice]
+                [saleId, productId, quantity, sellingPrice, product.purchase_price]
             );
 
-            // Deduct stock from products table
             await connection.query(
                 'UPDATE products SET current_stock = current_stock - ? WHERE id = ?',
                 [quantity, productId]
@@ -62,22 +52,23 @@ const createSale = async (req, res) => {
 
         await connection.commit();
         res.status(201).json({
-            message: 'Sale recorded successfully and stock updated.',
+            message: isCredit ? 'Credit sale recorded successfully.' : 'Sale recorded successfully.',
             saleId
         });
 
     } catch (error) {
         await connection.rollback();
-        console.error('Error creating sale:', error.message);
-        res.status(400).json({ error: error.message || 'Internal server error while recording sale.' });
+        res.status(400).json({ error: error.message || 'Internal server error recording sale.' });
     } finally {
         connection.release();
     }
 };
 
-// Get all sales (Admin sees all, Staff can see their own or all depending on rules, but let's allow Admin full view and staff relevant view)
+// Get Sales with filters
 const getSales = async (req, res) => {
     try {
+        const { from, to, productId, status } = req.query;
+        
         let query = `
             SELECT s.id AS sale_id, s.status, s.created_at, 
                    u.id AS staff_id, u.full_name AS staff_name,
@@ -87,21 +78,36 @@ const getSales = async (req, res) => {
             JOIN users u ON s.staff_id = u.id
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
+            WHERE 1=1
         `;
-
         let queryParams = [];
 
-        // If user is staff, restrict to their own sales
+        if (status) {
+            query += ' AND s.status = ?';
+            queryParams.push(status);
+        } else {
+            query += ' AND s.status = "ACTIVE"';
+        }
+
         if (req.user.role === 'STAFF') {
-            query += ' WHERE s.staff_id = ?';
+            query += ' AND s.staff_id = ?';
             queryParams.push(req.user.id);
+        }
+
+        if (from && to) {
+            query += ' AND DATE(s.created_at) BETWEEN ? AND ?';
+            queryParams.push(from, to);
+        }
+
+        if (productId) {
+            query += ' AND si.product_id = ?';
+            queryParams.push(productId);
         }
 
         query += ' ORDER BY s.created_at DESC';
 
         const [rows] = await pool.query(query, queryParams);
 
-        // Group rows by sale_id so each sale contains an array of items
         const salesMap = {};
         rows.forEach(row => {
             if (!salesMap[row.sale_id]) {
@@ -109,10 +115,7 @@ const getSales = async (req, res) => {
                     saleId: row.sale_id,
                     status: row.status,
                     createdAt: row.created_at,
-                    staff: {
-                        id: row.staff_id,
-                        fullName: row.staff_name
-                    },
+                    staff: { id: row.staff_id, fullName: row.staff_name },
                     items: []
                 };
             }
@@ -134,7 +137,102 @@ const getSales = async (req, res) => {
     }
 };
 
+// --- STEP 1: Staff requests approval for a credit payoff ---
+const requestCreditPayment = async (req, res) => {
+    try {
+        const { saleId } = req.body;
+        const staffId = req.user.id;
+
+        // Verify the sale is an outstanding credit sale
+        const [saleRows] = await pool.query('SELECT id, status FROM sales WHERE id = ? AND status = "CREDIT"', [saleId]);
+        if (saleRows.length === 0) {
+            return res.status(404).json({ error: 'Credit sale not found or is not currently in CREDIT status.' });
+        }
+
+        // Insert request
+        const [result] = await pool.query(
+            'INSERT INTO credit_payment_requests (sale_id, staff_id, status) VALUES (?, ?, "PENDING")',
+            [saleId, staffId]
+        );
+
+        res.status(201).json({ message: 'Credit payment request submitted to admin.', requestId: result.insertId });
+    } catch (error) {
+        console.error('Error requesting credit payment:', error);
+        res.status(500).json({ error: 'Internal server error requesting credit payment.' });
+    }
+};
+
+// --- STEP 2: Admin approves the credit payoff request ---
+const approveCreditPaymentRequest = async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const { requestId } = req.params;
+
+        // Fetch request
+        const [reqRows] = await connection.query('SELECT * FROM credit_payment_requests WHERE id = ? AND status = "PENDING"', [requestId]);
+        if (reqRows.length === 0) {
+            return res.status(404).json({ error: 'Pending credit payment request not found.' });
+        }
+
+        const request = reqRows[0];
+
+        // Mark request as APPROVED
+        await connection.query('UPDATE credit_payment_requests SET status = "APPROVED" WHERE id = ?', [requestId]);
+
+        // Mark original credit sale as CREDIT_PAID
+        await connection.query('UPDATE sales SET status = "CREDIT_PAID" WHERE id = ?', [request.sale_id]);
+
+        // Fetch items from the original credit sale
+        const [items] = await connection.query('SELECT product_id, quantity, selling_price, historical_purchase_price FROM sale_items WHERE sale_id = ?', [request.sale_id]);
+
+        // Create a new ACTIVE sale record for today so it counts towards today's revenue and profit
+        const [newSale] = await connection.query('INSERT INTO sales (staff_id, status) VALUES (?, "ACTIVE")', [req.user.id]);
+        const newSaleId = newSale.insertId;
+
+        for (const item of items) {
+            await connection.query(
+                `INSERT INTO sale_items (sale_id, product_id, quantity, selling_price, historical_purchase_price) 
+                 VALUES (?, ?, ?, ?, ?)`,
+                [newSaleId, item.product_id, item.quantity, item.selling_price, item.historical_purchase_price]
+            );
+        }
+
+        await connection.commit();
+        res.json({ message: 'Credit payment approved. Sale revenue has been logged for today.' });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Error approving credit payment:', error);
+        res.status(500).json({ error: 'Internal server error approving credit payment.' });
+    } finally {
+        connection.release();
+    }
+};
+
+// Get pending credit payment requests for admin review
+const getCreditPaymentRequests = async (req, res) => {
+    try {
+        const [requests] = await pool.query(`
+            -r
+            SELECT cpr.id AS request_id, cpr.status, cpr.created_at,
+                   s.id AS sale_id, u.full_name AS staff_name
+            FROM credit_payment_requests cpr
+            JOIN sales s ON cpr.sale_id = s.id
+            JOIN users u ON cpr.staff_id = u.id
+            WHERE cpr.status = 'PENDING'
+            ORDER BY cpr.created_at DESC
+        `);
+        res.json(requests);
+    } catch (error) {
+        console.error('Error fetching credit payment requests:', error);
+        res.status(500).json({ error: 'Internal server error fetching requests.' });
+    }
+};
+
 module.exports = {
     createSale,
-    getSales
+    getSales,
+    requestCreditPayment,
+    approveCreditPaymentRequest,
+    getCreditPaymentRequests
 };

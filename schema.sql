@@ -107,7 +107,19 @@ CREATE TABLE daily_expenses (
     staff_id INT NOT NULL,
     reason TEXT NOT NULL,
     amount DECIMAL(12, 2) NOT NULL,
-    expense_date DATE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (staff_id) REFERENCES users(id)
+);
+
+
+-- 11. Credit Payment Requests Table (Staff requests approval when credit is paid, Admin approves)
+CREATE TABLE credit_payment_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sale_id INT NOT NULL, -- The original CREDIT sale being paid off
+    staff_id INT NOT NULL, -- Staff who submitted the request
+    status ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (sale_id) REFERENCES sales(id),
     FOREIGN KEY (staff_id) REFERENCES users(id)
 );
