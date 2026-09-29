@@ -23,9 +23,11 @@ const createPurchaseRequest = async (req, res) => {
     }
 };
 
-// Get purchases (Admin sees all, Staff sees relevant)
+// Get purchases with filters (date range, product, status)
 const getPurchases = async (req, res) => {
     try {
+        const { from, to, productId, status } = req.query;
+
         let query = `
             SELECT pr.id, pr.quantity, pr.purchase_price, pr.status, pr.created_at,
                    p.id AS product_id, p.name AS product_name, p.unit,
@@ -33,12 +35,28 @@ const getPurchases = async (req, res) => {
             FROM purchases pr
             JOIN products p ON pr.product_id = p.id
             JOIN users u ON pr.staff_id = u.id
+            WHERE 1=1
         `;
         let queryParams = [];
 
+        if (status) {
+            query += ' AND pr.status = ?';
+            queryParams.push(status);
+        }
+
         if (req.user.role === 'STAFF') {
-            query += ' WHERE pr.staff_id = ?';
+            query += ' AND pr.staff_id = ?';
             queryParams.push(req.user.id);
+        }
+
+        if (from && to) {
+            query += ' AND DATE(pr.created_at) BETWEEN ? AND ?';
+            queryParams.push(from, to);
+        }
+
+        if (productId) {
+            query += ' AND pr.product_id = ?';
+            queryParams.push(productId);
         }
 
         query += ' ORDER BY pr.created_at DESC';
@@ -48,6 +66,26 @@ const getPurchases = async (req, res) => {
     } catch (error) {
         console.error('Error fetching purchases:', error);
         res.status(500).json({ error: 'Internal server error fetching purchases.' });
+    }
+};
+
+// Shortcut endpoint: Get only pending purchases (Admin only)
+const getPendingPurchases = async (req, res) => {
+    try {
+        const [purchases] = await pool.query(`
+            SELECT pr.id, pr.quantity, pr.purchase_price, pr.status, pr.created_at,
+                   p.id AS product_id, p.name AS product_name, p.unit,
+                   u.id AS staff_id, u.full_name AS staff_name
+            FROM purchases pr
+            JOIN products p ON pr.product_id = p.id
+            JOIN users u ON pr.staff_id = u.id
+            WHERE pr.status = 'PENDING'
+            ORDER BY pr.created_at DESC
+        `);
+        res.json(purchases);
+    } catch (error) {
+        console.error('Error fetching pending purchases:', error);
+        res.status(500).json({ error: 'Internal server error fetching pending purchases.' });
     }
 };
 
@@ -92,4 +130,4 @@ const reviewPurchase = async (req, res) => {
     }
 };
 
-module.exports = { createPurchaseRequest, getPurchases, reviewPurchase };
+module.exports = { createPurchaseRequest, getPurchases, getPendingPurchases, reviewPurchase };

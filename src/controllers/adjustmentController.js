@@ -36,18 +36,35 @@ const createAdjustment = async (req, res) => {
     }
 };
 
-// Get adjustments (Admin only)
+// Get adjustments with filters (date range, product)
 const getAdjustments = async (req, res) => {
     try {
-        const [adjustments] = await pool.query(`
+        const { from, to, productId } = req.query;
+
+        let query = `
             SELECT sa.id, sa.quantity_change, sa.reason, sa.created_at,
                    p.id AS product_id, p.name AS product_name, p.unit,
                    u.full_name AS admin_name
             FROM stock_adjustments sa
             JOIN products p ON sa.product_id = p.id
             JOIN users u ON sa.admin_id = u.id
-            ORDER BY sa.created_at DESC
-        `);
+            WHERE 1=1
+        `;
+        let queryParams = [];
+
+        if (from && to) {
+            query += ' AND DATE(sa.created_at) BETWEEN ? AND ?';
+            queryParams.push(from, to);
+        }
+
+        if (productId) {
+            query += ' AND sa.product_id = ?';
+            queryParams.push(productId);
+        }
+
+        query += ' ORDER BY sa.created_at DESC';
+
+        const [adjustments] = await pool.query(query, queryParams);
         res.json(adjustments);
     } catch (error) {
         console.error('Error fetching adjustments:', error);

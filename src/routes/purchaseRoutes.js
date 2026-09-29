@@ -5,6 +5,7 @@ const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
 router.post('/', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN', 'STAFF'), purchaseController.createPurchaseRequest);
 router.get('/', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN', 'STAFF'), purchaseController.getPurchases);
+router.get('/pending', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN'), purchaseController.getPendingPurchases);
 router.put('/:id/review', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN'), purchaseController.reviewPurchase);
 
 module.exports = router;

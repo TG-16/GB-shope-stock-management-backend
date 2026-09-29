@@ -86,7 +86,7 @@ CREATE TABLE daily_reports (
     id INT AUTO_INCREMENT PRIMARY KEY,
     staff_id INT NOT NULL,
     daily_sells_amount DECIMAL(12, 2) NOT NULL,
-    report_date DATE NOT NULL,
+    daily_total_profit DECIMAL(12, 2), -- added when fixing daily report generation
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (staff_id) REFERENCES users(id)
 );
