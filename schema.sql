@@ -13,7 +13,7 @@ CREATE TABLE banks (
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     full_name VARCHAR(150) NOT NULL,
-    username VARCHAR(100) NOT NULL UNIQUE,
+    username VARCHAR(100) NOT NULL UNIQUE, -- this can be phone number
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('SUPER_ADMIN', 'ADMIN', 'STAFF') NOT NULL DEFAULT 'STAFF',
     status ENUM('ACTIVE', 'REVOKED') NOT NULL DEFAULT 'ACTIVE',
