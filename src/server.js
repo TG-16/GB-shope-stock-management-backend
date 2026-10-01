@@ -3,6 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const pool = require('./config/db');
+const seedInitialSuperAdmin = require('./utils/databaseSeeding'); 
 
 // Import all route modules
 const authRoutes = require('./routes/authRoutes');
@@ -62,6 +63,8 @@ app.use((err, req, res, next) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🚀 Server is running on port ${PORT}`);
+    // Run seed check on startup
+    await seedInitialSuperAdmin();
 });

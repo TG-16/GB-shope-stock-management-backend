@@ -45,7 +45,7 @@ const getReportSummary = async (req, res) => {
         const [expenseStats] = await pool.query(`
             SELECT COALESCE(SUM(amount), 0) AS total_expenses
             FROM daily_expenses
-            WHERE expense_date BETWEEN ? AND ?
+            WHERE DATE(created_at) BETWEEN ? AND ?
         `, [startDate, endDate]);
 
         // 3. Outstanding Credit Sales total

@@ -25,7 +25,7 @@ const registerUser = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const [result] = await pool.query(
-            'INSERT INTO users (full_name, username, password, role) VALUES (?, ?, ?, ?)',
+            'INSERT INTO users (full_name, username, password_hash, role) VALUES (?, ?, ?, ?)',
             [fullName, username, hashedPassword, role]
         );
 
@@ -100,7 +100,7 @@ const changeUserPassword = async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-        await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, id]);
+        await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hashedPassword, id]);
 
         res.json({ message: 'User password updated successfully.' });
     } catch (error) {

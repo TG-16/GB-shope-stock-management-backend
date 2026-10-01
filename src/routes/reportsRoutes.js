@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const reportController = require('../controllers/reportController');
+const reportController = require('../controllers/reportsController');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
 // GET /api/reports/dashboard-stats - Admin dashboard quick cards & notification badges
