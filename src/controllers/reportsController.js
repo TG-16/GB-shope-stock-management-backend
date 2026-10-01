@@ -71,6 +71,46 @@ const getReportSummary = async (req, res) => {
     }
 };
 
+
+// Get admin dashboard quick stats and notification badge counts
+const getDashboardStats = async (req, res) => {
+    try {
+        // 1. Total products count
+        const [productRows] = await pool.query('SELECT COUNT(*) AS totalProducts FROM products');
+        
+        // 2. Pending purchase requests count (for notification badge)
+        const [purchaseRows] = await pool.query('SELECT COUNT(*) AS pendingPurchases FROM purchases WHERE status = "PENDING"');
+        
+        // 3. Pending credit payment requests count (for notification badge)
+        const [creditRows] = await pool.query('SELECT COUNT(*) AS pendingCreditPayments FROM credit_payment_requests WHERE status = "PENDING"');
+        
+        // 4. Today's total sales and total profit summary
+        const [salesRows] = await pool.query(`
+            SELECT 
+                COALESCE(SUM(si.quantity * si.selling_price), 0) AS todaySales,
+                COALESCE(SUM(si.quantity * (si.selling_price - si.historical_purchase_price)), 0) AS todayProfit
+            FROM sales s
+            JOIN sale_items si ON s.id = si.sale_id
+            WHERE s.status = 'ACTIVE' AND DATE(s.created_at) = CURDATE()
+        `);
+
+        res.json({
+            totalProducts: productRows[0].totalProducts,
+            pendingPurchases: purchaseRows[0].pendingPurchases,
+            pendingCreditPayments: creditRows[0].pendingCreditPayments,
+            todaySales: Number(salesRows[0].todaySales),
+            todayProfit: Number(salesRows[0].todayProfit)
+        });
+    } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+        res.status(500).json({ error: 'Internal server error fetching dashboard statistics.' });
+    }
+};
+
+
+
+
 module.exports = {
-    getReportSummary
+    getReportSummary,
+    getDashboardStats
 };
