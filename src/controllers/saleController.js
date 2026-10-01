@@ -73,11 +73,13 @@ const getSales = async (req, res) => {
             SELECT s.id AS sale_id, s.status, s.created_at, 
                    u.id AS staff_id, u.full_name AS staff_name,
                    si.id AS item_id, si.product_id, p.name AS product_name, 
-                   si.quantity, si.selling_price, si.historical_purchase_price, p.unit
+                   si.quantity, si.selling_price, si.historical_purchase_price, p.unit,
+                   cpr.id AS pending_request_id
             FROM sales s
             JOIN users u ON s.staff_id = u.id
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
+            LEFT JOIN credit_payment_requests cpr ON cpr.sale_id = s.id AND cpr.status = 'PENDING'
             WHERE 1=1
         `;
         let queryParams = [];
@@ -85,8 +87,6 @@ const getSales = async (req, res) => {
         if (status) {
             query += ' AND s.status = ?';
             queryParams.push(status);
-        } else {
-            query += ' AND s.status = "ACTIVE"';
         }
 
         if (req.user.role === 'STAFF') {
@@ -116,18 +116,22 @@ const getSales = async (req, res) => {
                     status: row.status,
                     createdAt: row.created_at,
                     staff: { id: row.staff_id, fullName: row.staff_name },
+                    pendingRequestId: row.pending_request_id,
                     items: []
                 };
             }
-            salesMap[row.sale_id].items.push({
-                itemId: row.item_id,
-                productId: row.product_id,
-                productName: row.product_name,
-                quantity: row.quantity,
-                sellingPrice: row.selling_price,
-                historicalPurchasePrice: row.historical_purchase_price,
-                unit: row.unit
-            });
+            const existingItem = salesMap[row.sale_id].items.find(i => i.itemId === row.item_id);
+            if (!existingItem) {
+                salesMap[row.sale_id].items.push({
+                    itemId: row.item_id,
+                    productId: row.product_id,
+                    productName: row.product_name,
+                    quantity: row.quantity,
+                    sellingPrice: row.selling_price,
+                    historicalPurchasePrice: row.historical_purchase_price,
+                    unit: row.unit
+                });
+            }
         });
 
         res.json(Object.values(salesMap));
@@ -147,6 +151,12 @@ const requestCreditPayment = async (req, res) => {
         const [saleRows] = await pool.query('SELECT id, status FROM sales WHERE id = ? AND status = "CREDIT"', [saleId]);
         if (saleRows.length === 0) {
             return res.status(404).json({ error: 'Credit sale not found or is not currently in CREDIT status.' });
+        }
+
+        // Prevent duplicate requests
+        const [existing] = await pool.query('SELECT id FROM credit_payment_requests WHERE sale_id = ? AND status = "PENDING"', [saleId]);
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'A pending credit payment request already exists for this sale.' });
         }
 
         // Insert request
@@ -177,8 +187,17 @@ const approveCreditPaymentRequest = async (req, res) => {
 
         const request = reqRows[0];
 
-        // Mark request as APPROVED
-        await connection.query('UPDATE credit_payment_requests SET status = "APPROVED" WHERE id = ?', [requestId]);
+        // Check if the sale is already CREDIT_PAID
+        const [saleRows] = await connection.query('SELECT status FROM sales WHERE id = ?', [request.sale_id]);
+        if (saleRows.length > 0 && saleRows[0].status === 'CREDIT_PAID') {
+            // Already paid, just clean up the phantom duplicate requests
+            await connection.query('UPDATE credit_payment_requests SET status = "APPROVED" WHERE sale_id = ? AND status = "PENDING"', [request.sale_id]);
+            await connection.commit();
+            return res.json({ message: 'Cleaned up duplicate requests. Sale was already paid.' });
+        }
+
+        // Mark ALL pending requests for this sale as APPROVED
+        await connection.query('UPDATE credit_payment_requests SET status = "APPROVED" WHERE sale_id = ? AND status = "PENDING"', [request.sale_id]);
 
         // Mark original credit sale as CREDIT_PAID
         await connection.query('UPDATE sales SET status = "CREDIT_PAID" WHERE id = ?', [request.sale_id]);
@@ -213,7 +232,6 @@ const approveCreditPaymentRequest = async (req, res) => {
 const getCreditPaymentRequests = async (req, res) => {
     try {
         const [requests] = await pool.query(`
-            -r
             SELECT cpr.id AS request_id, cpr.status, cpr.created_at,
                    s.id AS sale_id, u.full_name AS staff_name
             FROM credit_payment_requests cpr
@@ -229,10 +247,40 @@ const getCreditPaymentRequests = async (req, res) => {
     }
 };
 
+const rejectCreditPaymentRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+
+        // Find the sale_id for this request
+        const [reqRows] = await pool.query('SELECT sale_id FROM credit_payment_requests WHERE id = ?', [requestId]);
+        if (reqRows.length === 0) {
+            return res.status(404).json({ error: 'Pending credit payment request not found.' });
+        }
+
+        const saleId = reqRows[0].sale_id;
+
+        // Reject ALL pending requests for this sale
+        const [result] = await pool.query(
+            'UPDATE credit_payment_requests SET status = "REJECTED" WHERE sale_id = ? AND status = "PENDING"',
+            [saleId]
+        );
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Pending credit payment request not found or already processed.' });
+        }
+        
+        res.json({ message: 'Credit payment request rejected.' });
+    } catch (error) {
+        console.error('Error rejecting credit payment:', error);
+        res.status(500).json({ error: 'Internal server error rejecting credit payment.' });
+    }
+};
+
 module.exports = {
     createSale,
     getSales,
     requestCreditPayment,
     approveCreditPaymentRequest,
+    rejectCreditPaymentRequest,
     getCreditPaymentRequests
 };

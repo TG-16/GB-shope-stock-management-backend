@@ -35,7 +35,7 @@ const getExpenses = async (req, res) => {
         let queryParams = [];
 
         if (from && to) {
-            query += ' WHERE e.created_at BETWEEN ? AND ?';
+            query += ' WHERE DATE(e.created_at) BETWEEN ? AND ?';
             queryParams.push(from, to);
         }
 

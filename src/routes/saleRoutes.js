@@ -23,4 +23,7 @@ router.get('/credit-requests', authenticateToken, authorizeRoles('ADMIN', 'SUPER
 // PUT /api/sales/credit-requests/:requestId/approve - Admin approves credit payoff
 router.put('/credit-requests/:requestId/approve', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN'), saleController.approveCreditPaymentRequest);
 
+// PUT /api/sales/credit-requests/:requestId/reject - Admin rejects credit payoff
+router.put('/credit-requests/:requestId/reject', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN'), saleController.rejectCreditPaymentRequest);
+
 module.exports = router;

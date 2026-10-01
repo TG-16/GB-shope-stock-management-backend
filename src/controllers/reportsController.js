@@ -4,21 +4,20 @@ const pool = require('../config/db');
 const getReportSummary = async (req, res) => {
     try {
         const { period, from, to } = req.query; // period can be 'daily', 'weekly', 'monthly', or custom 'from'/'to'
-
+        // Frontend sends period as 'today', 'week', 'month' or 'custom'
+        
         let startDate, endDate;
         const today = new Date().toISOString().split('T')[0];
 
-        if (period === 'daily') {
+        if (period === 'today' || period === 'daily') {
             startDate = today;
             endDate = today;
-        } else if (period === 'weekly') {
-            // Last 7 days
+        } else if (period === 'week' || period === 'weekly') {
             const d = new Date();
             d.setDate(d.getDate() - 7);
             startDate = d.toISOString().split('T')[0];
             endDate = today;
-        } else if (period === 'monthly') {
-            // Last 30 days
+        } else if (period === 'month' || period === 'monthly') {
             const d = new Date();
             d.setDate(d.getDate() - 30);
             startDate = d.toISOString().split('T')[0];
@@ -48,21 +47,38 @@ const getReportSummary = async (req, res) => {
             WHERE DATE(created_at) BETWEEN ? AND ?
         `, [startDate, endDate]);
 
-        // 3. Outstanding Credit Sales total
-        const [creditStats] = await pool.query(`
-            SELECT COALESCE(SUM(si.quantity * si.selling_price), 0) AS total_credit
+        // 3. Daily grouping for chart data
+        const [chartDataRows] = await pool.query(`
+            SELECT 
+                DATE(s.created_at) as date,
+                COALESCE(SUM(si.quantity * si.selling_price), 0) AS revenue,
+                COALESCE(SUM(si.quantity * (si.selling_price - si.historical_purchase_price)), 0) AS profit
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
-            WHERE s.status = 'CREDIT' AND DATE(s.created_at) BETWEEN ? AND ?
+            WHERE s.status = 'ACTIVE' AND DATE(s.created_at) BETWEEN ? AND ?
+            GROUP BY DATE(s.created_at)
+            ORDER BY DATE(s.created_at) ASC
         `, [startDate, endDate]);
+
+        const chartData = chartDataRows.map(row => ({
+            date: row.date.toISOString().split('T')[0],
+            revenue: Number(row.revenue),
+            profit: Number(row.profit)
+        }));
+
+        const totalRevenue = Number(salesStats[0].total_revenue);
+        const totalProfit = Number(salesStats[0].total_profit);
+        const totalExpenses = Number(expenseStats[0].total_expenses);
+        const netProfit = totalProfit - totalExpenses;
 
         res.json({
             period: period || 'custom',
             dateRange: { startDate, endDate },
-            revenue: Number(salesStats[0].total_revenue),
-            profit: Number(salesStats[0].total_profit),
-            expenses: Number(expenseStats[0].total_expenses),
-            outstandingCredit: Number(creditStats[0].total_credit)
+            totalRevenue,
+            totalProfit,
+            totalExpenses,
+            netProfit,
+            chartData
         });
 
     } catch (error) {
@@ -82,7 +98,7 @@ const getDashboardStats = async (req, res) => {
         const [purchaseRows] = await pool.query('SELECT COUNT(*) AS pendingPurchases FROM purchases WHERE status = "PENDING"');
         
         // 3. Pending credit payment requests count (for notification badge)
-        const [creditRows] = await pool.query('SELECT COUNT(*) AS pendingCreditPayments FROM credit_payment_requests WHERE status = "PENDING"');
+        const [creditRows] = await pool.query('SELECT COUNT(DISTINCT sale_id) AS pendingCreditPayments FROM credit_payment_requests WHERE status = "PENDING"');
         
         // 4. Today's total sales and total profit summary
         const [salesRows] = await pool.query(`
