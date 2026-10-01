@@ -15,6 +15,7 @@ const adjustmentRoutes = require('./routes/adjustmentRoutes');
 const dailyReportRoutes = require('./routes/dailyReportRoutes');
 const bankRoutes = require('./routes/bankRoutes');
 const staffRoutes = require('./routes/staffRoutes');
+const superAdminRoutes = require('./routes/superAdminRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -42,6 +43,7 @@ app.use('/api/adjustments', adjustmentRoutes);
 app.use('/api/daily-reports', dailyReportRoutes);
 app.use('/api/banks', bankRoutes);
 app.use('/api/staff', staffRoutes);
+app.use('/api/super-admin', superAdminRoutes);
 
 // TODO: Mount your API routes here once created
 // ##### app.use('/api/auth', authRoutes); 
