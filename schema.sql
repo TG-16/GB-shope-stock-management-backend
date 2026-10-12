@@ -34,11 +34,11 @@ CREATE TABLE products (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- 4. Sales Table (Supports ACTIVE, CORRECTED, CREDIT, and CREDIT_PAID statuses)
+-- 4. Sales Table (Supports ACTIVE, VOID, CORRECTED, CREDIT, and CREDIT_PAID statuses)
 CREATE TABLE sales (
     id INT AUTO_INCREMENT PRIMARY KEY,
     staff_id INT NOT NULL,
-    status ENUM('ACTIVE', 'CORRECTED', 'CREDIT', 'CREDIT_PAID') NOT NULL DEFAULT 'ACTIVE',
+    status ENUM('ACTIVE', 'VOID', 'CORRECTED', 'CREDIT', 'CREDIT_PAID') NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (staff_id) REFERENCES users(id)
 );
@@ -51,6 +51,9 @@ CREATE TABLE sale_items (
     quantity DECIMAL(10, 2) NOT NULL,
     selling_price DECIMAL(10, 2) NOT NULL,
     historical_purchase_price DECIMAL(10, 2) NOT NULL,
+    is_voided BOOLEAN NOT NULL DEFAULT FALSE,
+    voided_at TIMESTAMP NULL,
+    void_reason TEXT NULL,
     FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
@@ -122,4 +125,30 @@ CREATE TABLE credit_payment_requests (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (sale_id) REFERENCES sales(id),
     FOREIGN KEY (staff_id) REFERENCES users(id)
+);
+
+-- 12. Void Requests Table (Staff requests approval for past sales or partial voids, Admin approves)
+CREATE TABLE void_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sale_id INT NOT NULL,
+    requested_by INT NOT NULL,
+    approved_by INT NULL,
+    void_type ENUM('FULL_SALE', 'ITEM_LEVEL') NOT NULL,
+    item_ids JSON NULL,
+    reason TEXT NOT NULL,
+    status ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (sale_id) REFERENCES sales(id),
+    FOREIGN KEY (requested_by) REFERENCES users(id),
+    FOREIGN KEY (approved_by) REFERENCES users(id)
+);
+
+-- 13. Notes Table (Daily notes by Staff, Admin, Super Admin)
+CREATE TABLE notes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );

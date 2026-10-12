@@ -37,7 +37,7 @@ const getReportSummary = async (req, res) => {
                 COALESCE(SUM(si.quantity * (si.selling_price - si.historical_purchase_price)), 0) AS total_profit
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
-            WHERE s.status = 'ACTIVE' AND DATE(s.created_at) BETWEEN ? AND ?
+            WHERE s.status = 'ACTIVE' AND si.is_voided = FALSE AND DATE(s.created_at) BETWEEN ? AND ?
         `, [startDate, endDate]);
 
         // 2. Calculate Total Expenses within range
@@ -55,7 +55,7 @@ const getReportSummary = async (req, res) => {
                 COALESCE(SUM(si.quantity * (si.selling_price - si.historical_purchase_price)), 0) AS profit
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
-            WHERE s.status = 'ACTIVE' AND DATE(s.created_at) BETWEEN ? AND ?
+            WHERE s.status = 'ACTIVE' AND si.is_voided = FALSE AND DATE(s.created_at) BETWEEN ? AND ?
             GROUP BY DATE(s.created_at)
             ORDER BY DATE(s.created_at) ASC
         `, [startDate, endDate]);
@@ -100,20 +100,24 @@ const getDashboardStats = async (req, res) => {
         // 3. Pending credit payment requests count (for notification badge)
         const [creditRows] = await pool.query('SELECT COUNT(DISTINCT sale_id) AS pendingCreditPayments FROM credit_payment_requests WHERE status = "PENDING"');
         
-        // 4. Today's total sales and total profit summary
+        // 4. Pending void requests count (for notification badge)
+        const [voidRows] = await pool.query('SELECT COUNT(*) AS pendingVoidRequests FROM void_requests WHERE status = "PENDING"');
+
+        // 5. Today's total sales and total profit summary
         const [salesRows] = await pool.query(`
             SELECT 
                 COALESCE(SUM(si.quantity * si.selling_price), 0) AS todaySales,
                 COALESCE(SUM(si.quantity * (si.selling_price - si.historical_purchase_price)), 0) AS todayProfit
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
-            WHERE s.status = 'ACTIVE' AND DATE(s.created_at) = CURDATE()
+            WHERE s.status = 'ACTIVE' AND si.is_voided = FALSE AND DATE(s.created_at) = CURDATE()
         `);
 
         res.json({
             totalProducts: productRows[0].totalProducts,
             pendingPurchases: purchaseRows[0].pendingPurchases,
             pendingCreditPayments: creditRows[0].pendingCreditPayments,
+            pendingVoidRequests: voidRows[0].pendingVoidRequests,
             todaySales: Number(salesRows[0].todaySales),
             todayProfit: Number(salesRows[0].todayProfit)
         });

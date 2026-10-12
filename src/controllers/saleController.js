@@ -74,12 +74,15 @@ const getSales = async (req, res) => {
                    u.id AS staff_id, u.full_name AS staff_name,
                    si.id AS item_id, si.product_id, p.name AS product_name, 
                    si.quantity, si.selling_price, si.historical_purchase_price, p.unit,
-                   cpr.id AS pending_request_id
+                   si.is_voided, si.voided_at, si.void_reason,
+                   cpr.id AS pending_request_id,
+                   vr.id AS pending_void_request_id
             FROM sales s
             JOIN users u ON s.staff_id = u.id
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
             LEFT JOIN credit_payment_requests cpr ON cpr.sale_id = s.id AND cpr.status = 'PENDING'
+            LEFT JOIN void_requests vr ON vr.sale_id = s.id AND vr.status = 'PENDING'
             WHERE 1=1
         `;
         let queryParams = [];
@@ -117,6 +120,7 @@ const getSales = async (req, res) => {
                     createdAt: row.created_at,
                     staff: { id: row.staff_id, fullName: row.staff_name },
                     pendingRequestId: row.pending_request_id,
+                    pendingVoidRequestId: row.pending_void_request_id,
                     items: []
                 };
             }
@@ -129,7 +133,10 @@ const getSales = async (req, res) => {
                     quantity: row.quantity,
                     sellingPrice: row.selling_price,
                     historicalPurchasePrice: row.historical_purchase_price,
-                    unit: row.unit
+                    unit: row.unit,
+                    isVoided: Boolean(row.is_voided),
+                    voidedAt: row.voided_at,
+                    voidReason: row.void_reason
                 });
             }
         });

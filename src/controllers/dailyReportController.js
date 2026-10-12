@@ -12,7 +12,7 @@ const getTodayDailyReportPreview = async (req, res) => {
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
-            WHERE s.status = 'ACTIVE' AND DATE(s.created_at) = CURDATE()
+            WHERE s.status = 'ACTIVE' AND si.is_voided = FALSE AND DATE(s.created_at) = CURDATE()
         `;
         let queryParams = [];
 
@@ -90,7 +90,7 @@ const createDailyReport = async (req, res) => {
             SELECT si.quantity, si.selling_price, si.historical_purchase_price
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
-            WHERE s.staff_id = ? AND s.status = 'ACTIVE' AND DATE(s.created_at) = CURDATE()
+            WHERE s.staff_id = ? AND s.status = 'ACTIVE' AND si.is_voided = FALSE AND DATE(s.created_at) = CURDATE()
         `, [staffId]);
 
         let computedSalesAmount = 0;

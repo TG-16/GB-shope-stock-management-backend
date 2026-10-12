@@ -17,6 +17,9 @@ const dailyReportRoutes = require('./routes/dailyReportRoutes');
 const bankRoutes = require('./routes/bankRoutes');
 const staffRoutes = require('./routes/staffRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
+const voidRoutes = require('./routes/voidRoutes');
+const noteRoutes = require('./routes/noteRoutes');
+const runMigrations = require('./utils/migrations');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -45,16 +48,8 @@ app.use('/api/daily-reports', dailyReportRoutes);
 app.use('/api/banks', bankRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/super-admin', superAdminRoutes);
-
-// TODO: Mount your API routes here once created
-// ##### app.use('/api/auth', authRoutes); 
-// ##### app.use('/api/products', productRoutes);
-// ##### app.use('/api/sales', saleRoutes);
-// app.use('/api/purchases', purchaseRoutes);
-// app.use('/api/adjustments', adjustmentRoutes);
-// app.use('/api/daily-reports', dailyReportRoutes);
-// app.use('/api/banks', bankRoutes);
-// app.use('/api/staff', staffRoutes);
+app.use('/api/voids', voidRoutes);
+app.use('/api/notes', noteRoutes);
 
 // Global Error Handler Middleware
 app.use((err, req, res, next) => {
@@ -65,6 +60,7 @@ app.use((err, req, res, next) => {
 // Start Server
 app.listen(PORT, async () => {
     console.log(`🚀 Server is running on port ${PORT}`);
-    // Run seed check on startup
+    // Run migrations and seed check on startup
+    await runMigrations().catch(err => console.error('Migration warning:', err.message));
     await seedInitialSuperAdmin();
 });
