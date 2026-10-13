@@ -9,7 +9,7 @@ router.get('/preview', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN',
 // POST /api/daily-reports - Step 2: Submit today's daily report with backend-calculated totals and bank splits
 router.post('/', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN', 'STAFF'), dailyReportController.createDailyReport);
 
-// GET /api/daily-reports - Step 3: View today's submitted daily reports
-router.get('/', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN', 'STAFF'), dailyReportController.getTodayDailyReports);
+// GET /api/daily-reports - Step 3: View daily reports (all historical or filtered by date)
+router.get('/', authenticateToken, authorizeRoles('ADMIN', 'SUPER_ADMIN', 'STAFF'), dailyReportController.getDailyReports);
 
 module.exports = router;

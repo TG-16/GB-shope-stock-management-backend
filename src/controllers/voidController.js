@@ -1,5 +1,17 @@
 const pool = require('../config/db');
 
+// Helper: restore product stock for an array of sale items within an active transaction connection
+const restoreStockForItems = async (connection, items) => {
+    for (const item of items) {
+        if (item.product_id && Number(item.quantity) > 0) {
+            await connection.query(
+                'UPDATE products SET current_stock = current_stock + ? WHERE id = ?',
+                [Number(item.quantity), item.product_id]
+            );
+        }
+    }
+};
+
 // --- 1. Staff requests void for a sale (full or item-level) ---
 const requestVoid = async (req, res) => {
     try {
@@ -116,6 +128,7 @@ const approveVoidRequest = async (req, res) => {
             [requestId]
         );
         if (reqRows.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ error: 'Pending void request not found.' });
         }
 
@@ -123,12 +136,19 @@ const approveVoidRequest = async (req, res) => {
         const voidReason = request.reason || 'Approved by Admin';
 
         if (request.void_type === 'FULL_SALE') {
+            // Restore stock for all unvoided items in this sale
+            const [itemsToRestore] = await connection.query(
+                'SELECT product_id, quantity FROM sale_items WHERE sale_id = ? AND is_voided = FALSE',
+                [request.sale_id]
+            );
+            await restoreStockForItems(connection, itemsToRestore);
+
             // Void entire sale
             await connection.query('UPDATE sales SET status = "VOID" WHERE id = ?', [request.sale_id]);
             await connection.query(
                 `UPDATE sale_items 
                  SET is_voided = TRUE, voided_at = CURRENT_TIMESTAMP, void_reason = ? 
-                 WHERE sale_id = ?`,
+                 WHERE sale_id = ? AND is_voided = FALSE`,
                 [voidReason, request.sale_id]
             );
         } else {
@@ -141,10 +161,17 @@ const approveVoidRequest = async (req, res) => {
             }
 
             if (itemIds.length > 0) {
+                // Restore stock for specified unvoided items
+                const [itemsToRestore] = await connection.query(
+                    'SELECT product_id, quantity FROM sale_items WHERE id IN (?) AND sale_id = ? AND is_voided = FALSE',
+                    [itemIds, request.sale_id]
+                );
+                await restoreStockForItems(connection, itemsToRestore);
+
                 await connection.query(
                     `UPDATE sale_items 
                      SET is_voided = TRUE, voided_at = CURRENT_TIMESTAMP, void_reason = ? 
-                     WHERE id IN (?) AND sale_id = ?`,
+                     WHERE id IN (?) AND sale_id = ? AND is_voided = FALSE`,
                     [voidReason, itemIds, request.sale_id]
                 );
             }
@@ -213,14 +240,17 @@ const staffDirectVoid = async (req, res) => {
         );
 
         if (saleRows.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ error: 'Sale not found.' });
         }
 
         const sale = saleRows[0];
         if (sale.staff_id !== staffId) {
+            await connection.rollback();
             return res.status(403).json({ error: 'You can only void your own sales.' });
         }
         if (sale.status === 'VOID') {
+            await connection.rollback();
             return res.status(400).json({ error: 'This sale is already voided.' });
         }
 
@@ -228,16 +258,24 @@ const staffDirectVoid = async (req, res) => {
         const saleDate = new Date(sale.created_at).toISOString().split('T')[0];
         const today = new Date().toISOString().split('T')[0];
         if (saleDate !== today) {
+            await connection.rollback();
             return res.status(400).json({
                 error: 'Staff can only directly void sales from today. For past sales, please submit a void request.'
             });
         }
 
+        // Restore stock for all unvoided items in this sale
+        const [itemsToRestore] = await connection.query(
+            'SELECT product_id, quantity FROM sale_items WHERE sale_id = ? AND is_voided = FALSE',
+            [saleId]
+        );
+        await restoreStockForItems(connection, itemsToRestore);
+
         await connection.query('UPDATE sales SET status = "VOID" WHERE id = ?', [saleId]);
         await connection.query(
             `UPDATE sale_items 
              SET is_voided = TRUE, voided_at = CURRENT_TIMESTAMP, void_reason = ? 
-             WHERE sale_id = ?`,
+             WHERE sale_id = ? AND is_voided = FALSE`,
             [reason, saleId]
         );
 
@@ -269,29 +307,46 @@ const adminDirectVoid = async (req, res) => {
 
         const [saleRows] = await connection.query('SELECT id, status FROM sales WHERE id = ?', [saleId]);
         if (saleRows.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ error: 'Sale not found.' });
         }
         if (saleRows[0].status === 'VOID') {
+            await connection.rollback();
             return res.status(400).json({ error: 'This sale has already been fully voided.' });
         }
 
         if (voidType === 'FULL_SALE') {
+            // Restore stock for all unvoided items
+            const [itemsToRestore] = await connection.query(
+                'SELECT product_id, quantity FROM sale_items WHERE sale_id = ? AND is_voided = FALSE',
+                [saleId]
+            );
+            await restoreStockForItems(connection, itemsToRestore);
+
             await connection.query('UPDATE sales SET status = "VOID" WHERE id = ?', [saleId]);
             await connection.query(
                 `UPDATE sale_items 
                  SET is_voided = TRUE, voided_at = CURRENT_TIMESTAMP, void_reason = ? 
-                 WHERE sale_id = ?`,
+                 WHERE sale_id = ? AND is_voided = FALSE`,
                 [reason, saleId]
             );
         } else {
             if (!Array.isArray(itemIds) || itemIds.length === 0) {
+                await connection.rollback();
                 return res.status(400).json({ error: 'At least one item must be specified for item-level void.' });
             }
+
+            // Restore stock for specified unvoided items
+            const [itemsToRestore] = await connection.query(
+                'SELECT product_id, quantity FROM sale_items WHERE id IN (?) AND sale_id = ? AND is_voided = FALSE',
+                [itemIds, saleId]
+            );
+            await restoreStockForItems(connection, itemsToRestore);
 
             await connection.query(
                 `UPDATE sale_items 
                  SET is_voided = TRUE, voided_at = CURRENT_TIMESTAMP, void_reason = ? 
-                 WHERE id IN (?) AND sale_id = ?`,
+                 WHERE id IN (?) AND sale_id = ? AND is_voided = FALSE`,
                 [reason, itemIds, saleId]
             );
 

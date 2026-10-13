@@ -138,9 +138,11 @@ const createDailyReport = async (req, res) => {
     }
 };
 
-// --- 3. VIEW TODAY'S DAILY REPORTS ---
-const getTodayDailyReports = async (req, res) => {
+// --- 3. VIEW DAILY REPORTS (Historical & Filterable) ---
+const getDailyReports = async (req, res) => {
     try {
+        const { date, from, to, today } = req.query;
+
         let query = `
             SELECT dr.id AS report_id, dr.daily_sells_amount, dr.daily_total_profit, dr.created_at,
                    u.id AS staff_id, u.full_name AS staff_name,
@@ -149,9 +151,19 @@ const getTodayDailyReports = async (req, res) => {
             JOIN users u ON dr.staff_id = u.id
             LEFT JOIN daily_report_entries dre ON dr.id = dre.daily_report_id
             LEFT JOIN banks b ON dre.bank_id = b.id
-            WHERE DATE(dr.created_at) = CURDATE()
+            WHERE 1=1
         `;
         let queryParams = [];
+
+        if (today === 'true') {
+            query += ' AND DATE(dr.created_at) = CURDATE()';
+        } else if (date) {
+            query += ' AND DATE(dr.created_at) = ?';
+            queryParams.push(date);
+        } else if (from && to) {
+            query += ' AND DATE(dr.created_at) BETWEEN ? AND ?';
+            queryParams.push(from, to);
+        }
 
         if (req.user.role === 'STAFF') {
             query += ' AND dr.staff_id = ?';
@@ -186,13 +198,14 @@ const getTodayDailyReports = async (req, res) => {
 
         res.json(Object.values(reportsMap));
     } catch (error) {
-        console.error('Error fetching today daily reports:', error);
-        res.status(500).json({ error: 'Internal server error fetching today daily reports.' });
+        console.error('Error fetching daily reports:', error);
+        res.status(500).json({ error: 'Internal server error fetching daily reports.' });
     }
 };
 
 module.exports = {
     getTodayDailyReportPreview,
     createDailyReport,
-    getTodayDailyReports
+    getDailyReports,
+    getTodayDailyReports: getDailyReports
 };
